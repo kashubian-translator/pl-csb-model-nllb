@@ -163,3 +163,5 @@ cython_debug/
 .vscode
 pl-csb-model-v1/
 debug/
+model_utilities/hyperparameter_search/tensorboard_logs/
+!model_utilities/hyperparameter_search/tensorboard_logs/.gitkeep

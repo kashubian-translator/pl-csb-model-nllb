@@ -5,6 +5,7 @@ from transformers import NllbTokenizerFast, AutoModelForSeq2SeqLM
 
 from evaluate.evaluator import ModelEvaluator
 import shared.config_loader as config_loader
+from hyperparameter_search.hyperparameter_searcher import HyperparameterSearcher
 from shared.logger import set_up_logger
 import train.data_loader as data_loader
 from train.finetuner import ModelFinetuner
@@ -64,10 +65,29 @@ def evaluate_model(config: dict, logger: Logger) -> None:
     logger.info(chrfpp)
 
 
+def hyperparameter_search(config: dict, logger: Logger) -> None:
+    tokenizer = NllbTokenizerFast.from_pretrained(config["MODEL"]["pretrained_model_name"], additional_special_tokens=["csb_Latn"])
+    dataset = data_loader.load_dataset(
+        config["DATA"]["training_data_file"],
+        config["DATA"]["validation_data_file"],
+        config["DATA"]["test_data_file"]
+    )
+    hyperparameter_space = {
+        "optimizer": ["Adafactor"],
+        "lr": [1e-3, 1e-4],
+        "relative_step": [False],
+        "clip_threshold": [0.8, 0.9],
+        "decay_rate": [-0.8, -0.7],
+        "weight_decay": [1e-3, 1e-2],
+    }
+    HyperparameterSearcher(logger, ModelFinetuner(logger)).hyperparameter_search(tokenizer, dataset, config,
+                                                                                 hyperparameter_space)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--reverse", help="Reverse translation direction", action="store_true")
-    parser.add_argument("mode", choices=["train", "translate", "evaluate"], help="Mode to run the application with")
+    parser.add_argument("mode", choices=["train", "translate", "evaluate", "hyperparameter_search"], help="Mode to run the application with")
     parser.add_argument("text", type=str, nargs="?", default="Wsiądźmy do tego autobusu", help="Text to translate")
 
     args = parser.parse_args()
@@ -83,3 +103,5 @@ if __name__ == "__main__":
             translate_with_model(config, logger, args.text, args.reverse)
         case "evaluate":
             evaluate_model(config, logger)
+        case "hyperparameter_search":
+            hyperparameter_search(config, logger)
