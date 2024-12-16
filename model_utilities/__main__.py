@@ -65,6 +65,23 @@ def evaluate_model(config: dict, logger: Logger) -> None:
     logger.info(chrfpp)
 
 
+def debug(config: dict, logger: Logger):
+    output_model_name = config["MODEL"]["output_model_name"]
+
+    model = AutoModelForSeq2SeqLM.from_pretrained(output_model_name)
+    tokenizer: NllbTokenizerFast = NllbTokenizerFast.from_pretrained(output_model_name)
+
+    tokenizer.src_lang = "pol_Latn"
+    tokenizer.tgt_lang = "csb_Latn"
+
+    s1 = "Jak zacząć naukę kaszubskiego w szkole?"
+    s2 = "Jak zacząc nôùkã kaszëbsczégò w szkòle?"
+
+    res = tokenizer(s1, text_target=s2, return_tensors='pt', padding=True, truncation=True, max_length=50)
+
+    print(res)
+
+
 def hyperparameter_search(config: dict, logger: Logger) -> None:
     tokenizer = NllbTokenizerFast.from_pretrained(config["MODEL"]["pretrained_model_name"], additional_special_tokens=["csb_Latn"])
     dataset = data_loader.load_dataset(
@@ -87,7 +104,7 @@ def hyperparameter_search(config: dict, logger: Logger) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--reverse", help="Reverse translation direction", action="store_true")
-    parser.add_argument("mode", choices=["train", "translate", "evaluate", "hyperparameter_search"], help="Mode to run the application with")
+    parser.add_argument("mode", choices=["train", "translate", "evaluate", "hyperparameter_search", "debug"], help="Mode to run the application with")
     parser.add_argument("text", type=str, nargs="?", default="Wsiądźmy do tego autobusu", help="Text to translate")
 
     args = parser.parse_args()
@@ -105,3 +122,5 @@ if __name__ == "__main__":
             evaluate_model(config, logger)
         case "hyperparameter_search":
             hyperparameter_search(config, logger)
+        case "debug":
+            debug(config, logger)
