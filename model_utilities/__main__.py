@@ -17,11 +17,12 @@ def train_model(config: dict, logger: Logger) -> None:
 
     pretrained_model = AutoModelForSeq2SeqLM.from_pretrained(pretrained_model_name)
     tokenizer = NllbTokenizerFast.from_pretrained(pretrained_model_name, additional_special_tokens=["csb_Latn"])
-    dataset = data_loader.load_dataset(
-        config["DATA"]["training_data_file"],
-        config["DATA"]["validation_data_file"],
-        config["DATA"]["test_data_file"]
-    )
+
+    data_directory = config["DIRECTORIES"]["preprocessed_data_dir"]
+    shuffle_seed = int(config["TRAINING"]["shuffle_seed"])
+    weights = {item[0]: float(item[1]) for item in config.items("DATA WEIGHTS")}
+
+    dataset = data_loader.prepare_train_dataset(data_directory, weights, shuffle_seed)
 
     ModelFinetuner(logger).finetune(pretrained_model, tokenizer, dataset, config)
 
@@ -68,18 +69,7 @@ def evaluate_model(config: dict, logger: Logger) -> None:
 def debug(config: dict, logger: Logger):
     output_model_name = config["MODEL"]["output_model_name"]
 
-    model = AutoModelForSeq2SeqLM.from_pretrained(output_model_name)
-    tokenizer: NllbTokenizerFast = NllbTokenizerFast.from_pretrained(output_model_name)
-
-    tokenizer.src_lang = "pol_Latn"
-    tokenizer.tgt_lang = "csb_Latn"
-
-    s1 = "Jak zacząć naukę kaszubskiego w szkole?"
-    s2 = "Jak zacząc nôùkã kaszëbsczégò w szkòle?"
-
-    res = tokenizer(s1, text_target=s2, return_tensors='pt', padding=True, truncation=True, max_length=50)
-
-    print(res)
+    data_loader.prepare_train_dataset(config)
 
 
 def hyperparameter_search(config: dict, logger: Logger) -> None:
