@@ -1,6 +1,7 @@
 import gc
 from configparser import ConfigParser
 from logging import Logger
+from typing import Tuple, List, Dict, Any
 
 import datasets as ds
 import matplotlib.pyplot as plt
@@ -15,9 +16,12 @@ from tqdm.auto import trange
 from transformers import NllbTokenizer, AutoModelForSeq2SeqLM, get_constant_schedule_with_warmup, NllbTokenizerFast, \
     DataCollatorForSeq2Seq, BatchEncoding
 
+from evaluate.evaluator import ModelEvaluator
+
 
 class ModelFinetuner:
     __logger: Logger
+    __evaluator: ModelEvaluator
 
     src_lang: str
     tgt_lang: str
@@ -52,6 +56,33 @@ class ModelFinetuner:
         plt.legend()
         plt.savefig("./debug/graphs/losses.png")
 
+    def __plot_scores(self, translation_scores):
+        plt.plot(translation_scores["bleu_pol_to_csb"],
+                 label="BLEU pol→csb",
+                 color="blue",
+                 linestyle="-")
+        plt.plot(translation_scores["bleu_csb_to_pol"],
+                 label="BLEU csb→pol",
+                 color="blue",
+                 linestyle="--")
+
+        plt.plot(translation_scores["chrfpp_pol_to_csb"],
+                 label="chrF++ pol→csb",
+                 color="red",
+                 linestyle="-")
+        plt.plot(translation_scores["chrfpp_csb_to_pol"],
+                 label="chrF++ csb→pol",
+                 color="red",
+                 linestyle="--")
+
+        plt.ylim(0, 100)
+        plt.xlabel("Epoch")
+        plt.ylabel("Score")
+        plt.title("BLEU and chrF++ scores")
+        plt.legend()
+
+        plt.savefig("./debug/graphs/bleu_and_chrfpp.png")
+
     def __tokenize_dataset(self, dataset: ds.Dataset, tokenizer: NllbTokenizerFast, max_length: int) -> Dataset:
         # This function expects a dataset with 2 columns named after source and target language
         # (pol_Latn and csb_Latn in our case)
@@ -75,24 +106,25 @@ class ModelFinetuner:
             return tokenized_input
 
         # Tokenize each row, returned dict is added to existing dataset as new columns since the 3 new keys aren't in it
-        tokenized_train_dataset_pl_to_csb = dataset.map(
+        tokenized_train_dataset_pol_to_csb = dataset.map(
             lambda row: tokenize_fn(row, self.src_lang, self.tgt_lang, tokenizer),
             batched=True
         )
-        tokenized_train_dataset_csb_to_pl = dataset.map(
+        tokenized_train_dataset_csb_to_pol = dataset.map(
             lambda row: tokenize_fn(row, self.tgt_lang, self.src_lang, tokenizer),
             batched=True
         )
         # Merge the two datasets together
         # TODO: Test if concatenation has better performance
-        tokenized_dataset = ds.interleave_datasets([tokenized_train_dataset_pl_to_csb, tokenized_train_dataset_csb_to_pl])
+        tokenized_dataset = ds.interleave_datasets([tokenized_train_dataset_pol_to_csb, tokenized_train_dataset_csb_to_pol])
         # Remove the old columns as they are not needed anymore
         tokenized_dataset = tokenized_dataset.remove_columns([self.src_lang, self.tgt_lang])
 
         return tokenized_dataset
 
     def __train_and_return_losses(self, model: AutoModelForSeq2SeqLM, tokenizer: NllbTokenizer, dataset: ds.Dataset,
-                                  optimizer: Optimizer, scheduler: LambdaLR, config: ConfigParser) -> tuple[list[float], list[float]]:
+                                  optimizer: Optimizer, scheduler: LambdaLR, config: ConfigParser) -> tuple[
+            list[float], list[float], dict[str, list[Any]]]:
         self.__log_train_config(config)
 
         # Prepare variables
@@ -107,6 +139,12 @@ class ModelFinetuner:
 
         training_losses = []
         validation_losses = []
+        translation_scores = {
+            "bleu_pol_to_csb": [],
+            "chrfpp_pol_to_csb": [],
+            "bleu_csb_to_pol": [],
+            "chrfpp_csb_to_pol": []
+        }
 
         # Prepare dataset
         dataset = dataset.shuffle(seed=shuffle_seed)
@@ -127,7 +165,7 @@ class ModelFinetuner:
         train_batch_num = len(train_dataloader)
         val_batch_num = len(validation_dataloader)
 
-        train_steps = num_epochs * train_batch_num * batch_size
+        train_steps = num_epochs * train_batch_num
 
         self.__logger.debug(f"Number of epochs: {num_epochs}")
         self.__logger.debug(f"Batch number per epoch: {train_batch_num}")
@@ -155,7 +193,7 @@ class ModelFinetuner:
                     self.__logger.error("Error: unexpected exception during training, exception: %s", str(e))
                     continue
 
-                progress_bar.update(batch_size)
+                progress_bar.update()
 
             avg_training_loss = sum(epoch_training_losses) / len(epoch_training_losses)
             training_losses.append(avg_training_loss)
@@ -163,7 +201,7 @@ class ModelFinetuner:
             epoch_validation_losses = []
             with torch.no_grad():
                 self.__logger.info(f"Epoch {epoch + 1}/{num_epochs}: Starting validation")
-                val_progress_bar = trange(val_batch_num * batch_size)
+                val_progress_bar = trange(val_batch_num)
                 for batch in validation_dataloader:
                     batch = {k: v.to(model.device) for k, v in batch.items()}
                     try:
@@ -173,10 +211,21 @@ class ModelFinetuner:
                         self.__logger.error("Error: unexpected exception during validation, exception: %s", str(e))
                         continue
 
-                    val_progress_bar.update(batch_size)
+                    val_progress_bar.update()
 
             avg_validation_loss = sum(epoch_validation_losses) / len(epoch_validation_losses)
             validation_losses.append(avg_validation_loss)
+
+            bleu_pol_to_csb, chrfpp_pol_to_csb, bleu_csb_to_pol, chrfpp_csb_to_pol = (
+                self.__evaluator.evaluate_dataset(config["DATA"]["validation_bleu_data_file"]))
+
+            translation_scores["bleu_pol_to_csb"].append(bleu_pol_to_csb)
+            translation_scores["chrfpp_pol_to_csb"].append(chrfpp_pol_to_csb)
+            translation_scores["bleu_csb_to_pol"].append(bleu_csb_to_pol)
+            translation_scores["chrfpp_csb_to_pol"].append(chrfpp_csb_to_pol)
+
+            self.__logger.info(f"Epoch {epoch + 1}/{num_epochs}: Training Loss: {avg_training_loss:.4f}, Validation "
+                               f"Loss: {avg_validation_loss:.4f}")
 
             if avg_validation_loss < best_val_loss:
                 best_val_loss = avg_validation_loss
@@ -190,14 +239,12 @@ class ModelFinetuner:
                     self.__logger.info("Early stopping triggered")
                     break
 
-            self.__logger.info(f"Epoch {epoch + 1}/{num_epochs}: Training Loss: {avg_training_loss:.4f}, Validation "
-                               f"Loss: {avg_validation_loss:.4f}")
-
         self.__plot_losses(training_losses, validation_losses)
-        return training_losses, validation_losses
+        self.__plot_translation_scores(translation_scores)
+        return training_losses, validation_losses, translation_scores
 
     def finetune(self, model: AutoModelForSeq2SeqLM, tokenizer: NllbTokenizer, dataset: ds.Dataset,
-                 config: ConfigParser, optimizer=None) -> None:
+                 config: ConfigParser, optimizer=None) -> tuple[list[float], list[float], dict[str, list[Any]]]:
         if torch.cuda.is_available():
             self.__logger.info("CUDA is available. Using GPU for training")
             model.cuda()
@@ -208,7 +255,7 @@ class ModelFinetuner:
             optimizer = self.__initialize_optimizer(model, config)
         scheduler = get_constant_schedule_with_warmup(optimizer, num_warmup_steps=int(config["TRAINING"]["warmup_steps"]))
 
-        self.__train_and_return_losses(model, tokenizer, dataset, optimizer, scheduler, config)
+        return self.__train_and_return_losses(model, tokenizer, dataset, optimizer, scheduler, config)
 
     def __initialize_optimizer(self, model: AutoModelForSeq2SeqLM, config: ConfigParser):
         try:

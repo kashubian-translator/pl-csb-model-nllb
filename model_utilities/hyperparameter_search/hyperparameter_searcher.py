@@ -35,7 +35,7 @@ class HyperparameterSearcher:
             try:
                 model = AutoModelForSeq2SeqLM.from_pretrained(config["MODEL"]["pretrained_model_name"])
                 optimizer = self.__configure_optimizer(model, hyperparams)
-                training_losses, validation_losses = self.__model_finetuner.finetune(
+                training_losses, validation_losses, _ = self.__model_finetuner.finetune(
                     model, tokenizer, dataset, config, optimizer
                 )
                 writer.add_hparams(

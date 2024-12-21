@@ -6,6 +6,7 @@ from transformers import NllbTokenizerFast, AutoModelForSeq2SeqLM
 from evaluate.evaluator import ModelEvaluator
 import shared.config_loader as config_loader
 from hyperparameter_search.hyperparameter_searcher import HyperparameterSearcher
+from hyperparameter_search.weight_searcher import WeightSearcher
 from shared.logger import set_up_logger
 import train.data_loader as data_loader
 from train.finetuner import ModelFinetuner
@@ -20,9 +21,11 @@ def train_model(config: dict, logger: Logger) -> None:
 
     data_directory = config["DIRECTORIES"]["preprocessed_data_dir"]
     shuffle_seed = int(config["TRAINING"]["shuffle_seed"])
-    weights = {item[0]: float(item[1]) for item in config.items("DATA WEIGHTS")}
+    weights = {item[0]: float(item[1]) for item in config.items("DATA_WEIGHTS")}
 
     dataset = data_loader.prepare_train_dataset(data_directory, weights, shuffle_seed)
+
+    validation_bleu_data = data_loader.load_data(config["DATA"]["validation_bleu_data_file"])
 
     ModelFinetuner(logger).finetune(pretrained_model, tokenizer, dataset, config)
 
@@ -48,22 +51,19 @@ def evaluate_model(config: dict, logger: Logger) -> None:
 
     model = AutoModelForSeq2SeqLM.from_pretrained(output_model_name)
     tokenizer = NllbTokenizerFast.from_pretrained(output_model_name)
-    validation_data = data_loader.load_data(config["DATA"]["validation_data_file"])
-
-    source_data = validation_data[validation_data.columns[0]]
-    target_data = validation_data[validation_data.columns[1]]
 
     evaluator = ModelEvaluator(logger, model, tokenizer)
 
-    bleu, chrfpp = evaluator.evaluate(sentences=source_data, references=target_data)
-    logger.info(f"Results ({source_data.name} → {target_data.name}):")
-    logger.info(bleu)
-    logger.info(chrfpp)
+    bleu_pol_to_csb, chrfpp_pol_to_csb, bleu_csb_to_pol, chrfpp_csb_to_pol = (
+        evaluator.evaluate_dataset(config["DATA"]["validation_bleu_data_file"]))
 
-    bleu, chrfpp = evaluator.evaluate(sentences=target_data, references=source_data)
-    logger.info(f"Results ({target_data.name} → {source_data.name}):")
-    logger.info(bleu)
-    logger.info(chrfpp)
+    logger.info(f"Results (pol → csb):")
+    logger.info(bleu_pol_to_csb)
+    logger.info(chrfpp_pol_to_csb)
+
+    logger.info(f"Results (csb → pol):")
+    logger.info(bleu_csb_to_pol)
+    logger.info(chrfpp_csb_to_pol)
 
 
 def debug(config: dict, logger: Logger):
@@ -74,11 +74,10 @@ def debug(config: dict, logger: Logger):
 
 def hyperparameter_search(config: dict, logger: Logger) -> None:
     tokenizer = NllbTokenizerFast.from_pretrained(config["MODEL"]["pretrained_model_name"], additional_special_tokens=["csb_Latn"])
-    dataset = data_loader.load_dataset(
-        config["DATA"]["training_data_file"],
-        config["DATA"]["validation_data_file"],
-        config["DATA"]["test_data_file"]
-    )
+    data_directory = config["DIRECTORIES"]["preprocessed_data_dir"]
+    shuffle_seed = int(config["TRAINING"]["shuffle_seed"])
+    weights = {item[0]: float(item[1]) for item in config.items("DATA_WEIGHTS")}
+    dataset = data_loader.prepare_train_dataset(data_directory, weights, shuffle_seed)
     hyperparameter_space = {
         "optimizer": ["Adafactor"],
         "lr": [1e-3, 1e-4],
@@ -91,10 +90,17 @@ def hyperparameter_search(config: dict, logger: Logger) -> None:
                                                                                  hyperparameter_space)
 
 
+def weight_search(config: dict, logger: Logger) -> None:
+    pretrained_model_name = config["MODEL"]["pretrained_model_name"]
+    pretrained_model = AutoModelForSeq2SeqLM.from_pretrained(pretrained_model_name)
+    tokenizer = NllbTokenizerFast.from_pretrained(pretrained_model_name, additional_special_tokens=["csb_Latn"])
+    WeightSearcher(logger, ModelFinetuner(logger), config, pretrained_model, tokenizer).weight_search()
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-r", "--reverse", help="Reverse translation direction", action="store_true")
-    parser.add_argument("mode", choices=["train", "translate", "evaluate", "hyperparameter_search", "debug"], help="Mode to run the application with")
+    parser.add_argument("mode", choices=["train", "translate", "evaluate", "hyperparameter_search", "debug", "weight_search"], help="Mode to run the application with")
     parser.add_argument("text", type=str, nargs="?", default="Wsiądźmy do tego autobusu", help="Text to translate")
 
     args = parser.parse_args()
@@ -114,3 +120,5 @@ if __name__ == "__main__":
             hyperparameter_search(config, logger)
         case "debug":
             debug(config, logger)
+        case "weight_search":
+            weight_search(config, logger)
