@@ -36,9 +36,9 @@ class WeightSearcher:
         shuffle_seed = int(self.__config["TRAINING"]["shuffle_seed"])
 
         current_weights = {
-            "dictionaries": w_dictionaries,
-            "corpus": w_corpus,
-            "remus": w_remus
+            "dictionaries-mini": w_dictionaries,
+            "corpus-mini": w_corpus,
+            "remus-mini": w_remus
         }
 
         dataset = prepare_train_dataset(data_directory, current_weights, shuffle_seed)
