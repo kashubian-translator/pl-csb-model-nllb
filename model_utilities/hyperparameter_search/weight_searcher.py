@@ -60,7 +60,7 @@ class WeightSearcher:
     def weight_search(self) -> None:
         study = optuna.create_study(study_name="weight_search", direction="maximize")
 
-        n_trials = int(self.__config["DATA_WEIGHTS"]["weight_search_trials_number"])
+        n_trials = int(self.__config["WEIGHT_SEARCH"]["weight_search_trials_number"])
         self.__logger.info(f"Starting weight search with n_trials={n_trials}.")
         study.optimize(self.objective, n_trials=n_trials)
 
