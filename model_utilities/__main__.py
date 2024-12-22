@@ -27,7 +27,7 @@ def train_model(config: dict, logger: Logger) -> None:
 
     validation_bleu_data = data_loader.load_data(config["DATA"]["validation_bleu_data_file"])
 
-    ModelFinetuner(logger).finetune(pretrained_model, tokenizer, dataset, config)
+    ModelFinetuner(logger, ModelEvaluator(logger, pretrained_model, tokenizer)).finetune(pretrained_model, tokenizer, dataset, config)
 
 
 def translate_with_model(config: dict, logger: Logger, text: str, reverse: bool) -> None:
@@ -73,7 +73,9 @@ def debug(config: dict, logger: Logger):
 
 
 def hyperparameter_search(config: dict, logger: Logger) -> None:
-    tokenizer = NllbTokenizerFast.from_pretrained(config["MODEL"]["pretrained_model_name"], additional_special_tokens=["csb_Latn"])
+    pretrained_model_name = config["MODEL"]["pretrained_model_name"]
+    pretrained_model = AutoModelForSeq2SeqLM.from_pretrained(pretrained_model_name)
+    tokenizer = NllbTokenizerFast.from_pretrained(config["MODEL"][pretrained_model_name], additional_special_tokens=["csb_Latn"])
     data_directory = config["DIRECTORIES"]["preprocessed_data_dir"]
     shuffle_seed = int(config["TRAINING"]["shuffle_seed"])
     weights = {item[0]: float(item[1]) for item in config.items("DATA_WEIGHTS")}
@@ -86,15 +88,15 @@ def hyperparameter_search(config: dict, logger: Logger) -> None:
         "decay_rate": [-0.8, -0.7],
         "weight_decay": [1e-3, 1e-2],
     }
-    HyperparameterSearcher(logger, ModelFinetuner(logger)).hyperparameter_search(tokenizer, dataset, config,
-                                                                                 hyperparameter_space)
+    HyperparameterSearcher(logger, ModelFinetuner(logger, ModelEvaluator(logger, pretrained_model, tokenizer))).hyperparameter_search(tokenizer, dataset, config,
+                                                                                                                                      hyperparameter_space)
 
 
 def weight_search(config: dict, logger: Logger) -> None:
     pretrained_model_name = config["MODEL"]["pretrained_model_name"]
     pretrained_model = AutoModelForSeq2SeqLM.from_pretrained(pretrained_model_name)
     tokenizer = NllbTokenizerFast.from_pretrained(pretrained_model_name, additional_special_tokens=["csb_Latn"])
-    WeightSearcher(logger, ModelFinetuner(logger), config, pretrained_model, tokenizer).weight_search()
+    WeightSearcher(logger, ModelFinetuner(logger, ModelEvaluator(logger, pretrained_model, tokenizer)), config, pretrained_model, tokenizer).weight_search()
 
 
 if __name__ == "__main__":

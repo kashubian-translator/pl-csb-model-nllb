@@ -26,8 +26,9 @@ class ModelFinetuner:
     src_lang: str
     tgt_lang: str
 
-    def __init__(self, logger) -> None:
+    def __init__(self, logger, evaluator) -> None:
         self.__logger = logger
+        self.__evaluator = evaluator
         self.src_lang = "pol_Latn"
         self.tgt_lang = "csb_Latn"
 
