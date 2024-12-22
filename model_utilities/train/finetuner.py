@@ -57,7 +57,7 @@ class ModelFinetuner:
         plt.legend()
         plt.savefig("./debug/graphs/losses.png")
 
-    def __plot_scores(self, translation_scores):
+    def __plot_translation_scores(self, translation_scores):
         plt.plot(translation_scores["bleu_pol_to_csb"],
                  label="BLEU pol→csb",
                  color="blue",
