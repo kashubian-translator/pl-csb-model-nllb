@@ -1,6 +1,7 @@
 import re
 from logging import Logger
 
+import torch
 from transformers import NllbTokenizer, AutoModelForSeq2SeqLM, Pipeline, pipeline
 
 
@@ -18,10 +19,13 @@ class Translator:
         self.__tokenizer = tokenizer
         self.__max_length = max_length
 
+        device_index = 0 if torch.cuda.is_available() else -1
+
         self.__pipeline = pipeline(task="translation",
                                    model=self.__model,
                                    tokenizer=self.__tokenizer,
-                                   max_length=self.__max_length)
+                                   max_length=self.__max_length,
+                                   device=device_index)
 
     def translate(self, text_list: list[str], source_lang: str, target_lang: str) -> list[str]:
         model_output = self.__pipeline(text_list, src_lang=source_lang, tgt_lang=target_lang)
