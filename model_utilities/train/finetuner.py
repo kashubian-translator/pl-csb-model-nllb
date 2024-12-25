@@ -220,10 +220,10 @@ class ModelFinetuner:
             bleu_pol_to_csb, chrfpp_pol_to_csb, bleu_csb_to_pol, chrfpp_csb_to_pol = (
                 self.__evaluator.evaluate_dataset(config["DATA"]["validation_bleu_data_file"]))
 
-            translation_scores["bleu_pol_to_csb"].append(bleu_pol_to_csb)
-            translation_scores["chrfpp_pol_to_csb"].append(chrfpp_pol_to_csb)
-            translation_scores["bleu_csb_to_pol"].append(bleu_csb_to_pol)
-            translation_scores["chrfpp_csb_to_pol"].append(chrfpp_csb_to_pol)
+            translation_scores["bleu_pol_to_csb"].append(bleu_pol_to_csb.score)
+            translation_scores["chrfpp_pol_to_csb"].append(chrfpp_pol_to_csb.score)
+            translation_scores["bleu_csb_to_pol"].append(bleu_csb_to_pol.score)
+            translation_scores["chrfpp_csb_to_pol"].append(chrfpp_csb_to_pol.score)
 
             self.__logger.info(f"Epoch {epoch + 1}/{num_epochs}: Training Loss: {avg_training_loss:.4f}, Validation "
                                f"Loss: {avg_validation_loss:.4f}")
