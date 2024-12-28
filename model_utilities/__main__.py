@@ -69,7 +69,23 @@ def evaluate_model(config: dict, logger: Logger) -> None:
 def debug(config: dict, logger: Logger):
     output_model_name = config["MODEL"]["output_model_name"]
 
-    data_loader.prepare_train_dataset(config)
+    model = AutoModelForSeq2SeqLM.from_pretrained(output_model_name)
+    tokenizer = NllbTokenizerFast.from_pretrained(output_model_name)
+
+    polish_references = data_loader.load_synonyms(config["DATA"]["validation_synonyms_pol_data_file"])
+    cashubian_references = data_loader.load_synonyms(config["DATA"]["validation_synonyms_csb_data_file"])
+
+    evaluator = ModelEvaluator(logger, model, tokenizer)
+
+    bleu, chrfpp = evaluator.evaluate_with_synonyms(polish_references[0], cashubian_references, "pol_Latn", "csb_Latn")
+    logger.info(f"Results (pol_Latn → csb_Latn):")
+    logger.info(bleu)
+    logger.info(chrfpp)
+
+    bleu, chrfpp = evaluator.evaluate_with_synonyms(cashubian_references[0], polish_references, "csb_Latn", "pol_Latn")
+    logger.info(f"Results (csb_Latn → pol_Latn):")
+    logger.info(bleu)
+    logger.info(chrfpp)
 
 
 def hyperparameter_search(config: dict, logger: Logger) -> None:

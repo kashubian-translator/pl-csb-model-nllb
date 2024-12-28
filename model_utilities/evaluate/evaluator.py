@@ -27,3 +27,11 @@ class ModelEvaluator:
         chrfpp = sacrebleu.corpus_chrf(translated_sentences_list, references_list, word_order=2)
 
         return (bleu, chrfpp)
+
+    def evaluate_with_synonyms(self, sentences: list[str], references: list[list[str]], source_lang: str, target_lang: str) -> tuple[sacrebleu.metrics.BLEUScore, sacrebleu.metrics.CHRFScore]:
+        translated_sentences = self.__translator.translate(sentences, source_lang, target_lang)
+
+        bleu = sacrebleu.corpus_bleu(translated_sentences, references)
+        chrfpp = sacrebleu.corpus_chrf(translated_sentences, references, word_order=2)
+
+        return (bleu, chrfpp)
